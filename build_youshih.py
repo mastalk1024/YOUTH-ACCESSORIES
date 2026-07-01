@@ -397,7 +397,6 @@ html = f"""<!DOCTYPE html>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>配件產品目錄</title>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
 *,*::before,*::after{{box-sizing:border-box;margin:0;padding:0}}
 :root{{--p:#1a56db;--pg:#059669;--bg:#f8fafc;--sf:#fff;--bd:#e2e8f0;--tx:#1e293b;--mu:#64748b;--hv:#f1f5f9}}
@@ -850,7 +849,7 @@ function handleFile(file) {{
       const ws = wb.Sheets[wb.SheetNames[0]];
       const rows = XLSX.utils.sheet_to_json(ws, {{header:1, defval:''}});
       _parsedCodes = extractCodes(rows);
-      document.getElementById('paste-area').value = _parsedCodes.join('\n');
+      document.getElementById('paste-area').value = _parsedCodes.join('\\n');
     }};
     reader.readAsArrayBuffer(file);
   }} else {{
@@ -859,7 +858,7 @@ function handleFile(file) {{
       const ws = wb.Sheets[wb.SheetNames[0]];
       const rows = XLSX.utils.sheet_to_json(ws, {{header:1, defval:''}});
       _parsedCodes = extractCodes(rows);
-      document.getElementById('paste-area').value = _parsedCodes.join('\n');
+      document.getElementById('paste-area').value = _parsedCodes.join('\\n');
     }};
     reader.readAsText(file, 'UTF-8');
   }}
@@ -882,7 +881,7 @@ function resetCompare() {{
 
 function runCompare() {{
   const raw = document.getElementById('paste-area').value.trim();
-  const codes = raw ? [...new Set(raw.split(/[\n,\t]+/).map(s=>s.trim()).filter(Boolean))] : _parsedCodes;
+  const codes = raw ? [...new Set(raw.split(/[\\n,\\t,;]+/).map(s=>s.trim()).filter(Boolean))] : _parsedCodes;
   if(!codes.length) {{ alert('請先上傳檔案或貼上代碼'); return; }}
   const lk = buildLookup();
   _cmpData = codes.map(c=>{{
@@ -920,7 +919,7 @@ function downloadCompareCsv() {{
   if(!_cmpData) return;
   const cols = ['查詢代碼','狀態','品牌','分類','品名','料號','barcode','y料號'];
   const lines = [cols, ..._cmpData.map(r=>cols.map(k=>`"${{String(r[k]||'').replace(/"/g,'""')}}"`))]
-    .map(r=>r.join(',')).join('\r\n');
+    .map(r=>r.join(',')).join('\\r\\n');
   const blob = new Blob(['﻿'+lines], {{type:'text/csv;charset=utf-8'}});
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
@@ -932,6 +931,7 @@ function downloadCompareCsv() {{
 // Init
 setBrand('ys');
 </script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 </body>
 </html>"""
 
