@@ -397,6 +397,7 @@ html = f"""<!DOCTYPE html>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>配件產品目錄</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
 *,*::before,*::after{{box-sizing:border-box;margin:0;padding:0}}
 :root{{--p:#1a56db;--pg:#059669;--bg:#f8fafc;--sf:#fff;--bd:#e2e8f0;--tx:#1e293b;--mu:#64748b;--hv:#f1f5f9}}
@@ -487,6 +488,38 @@ mark{{background:#fef08a;border-radius:2px;padding:0 1px}}
   td{{padding:6px 8px}}
   .nm{{max-width:160px}}
 }}
+
+/* ── Compare modal ─────────────────────────────────────────────────────────── */
+.modal-bg{{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:200;align-items:center;justify-content:center;display:none}}
+.modal-bg.open{{display:flex}}
+.modal{{background:#fff;border-radius:12px;padding:24px 28px;width:min(580px,95vw);max-height:88vh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,.2)}}
+.modal h2{{font-size:1rem;font-weight:700;margin-bottom:16px;color:var(--tx);display:flex;align-items:center;justify-content:space-between}}
+.modal h2 button{{background:none;border:none;cursor:pointer;font-size:.85rem;color:var(--mu);padding:2px 6px}}
+.drop-area{{border:2px dashed var(--bd);border-radius:8px;padding:26px;text-align:center;cursor:pointer;color:var(--mu);font-size:.85rem;transition:border-color .15s;margin-bottom:10px}}
+.drop-area:hover,.drop-area.over{{border-color:var(--p);color:var(--p)}}
+.drop-area input{{display:none}}
+.or-sep{{text-align:center;color:var(--mu);font-size:.76rem;margin:8px 0;position:relative}}
+.or-sep::before,.or-sep::after{{content:'';position:absolute;top:50%;width:43%;border-top:1px solid var(--bd)}}
+.or-sep::before{{left:0}}.or-sep::after{{right:0}}
+#paste-area{{width:100%;height:88px;resize:vertical;border:1.5px solid var(--bd);border-radius:7px;padding:8px;font-size:.82rem;font-family:monospace;outline:none;box-sizing:border-box}}
+#paste-area:focus{{border-color:var(--p)}}
+.modal-hint{{font-size:.75rem;color:var(--mu);margin:6px 0 14px;line-height:1.55}}
+.modal-actions{{display:flex;gap:8px;flex-wrap:wrap}}
+.btn-prim{{background:var(--p);color:#fff;border:none;border-radius:7px;padding:8px 18px;cursor:pointer;font-size:.84rem;font-weight:600}}
+.btn-prim:hover{{background:#1740b0}}
+.btn-sec2{{background:#fff;color:var(--tx);border:1.5px solid var(--bd);border-radius:7px;padding:8px 18px;cursor:pointer;font-size:.84rem;font-weight:500}}
+.btn-sec2:hover:not(:disabled){{border-color:var(--p);color:var(--p)}}
+.btn-sec2:disabled{{opacity:.35;cursor:default}}
+.cmp-summary{{margin:14px 0 8px;font-size:.84rem;display:flex;gap:14px;flex-wrap:wrap;align-items:center}}
+.cmp-hit{{color:#059669;font-weight:700}}.cmp-miss{{color:#dc2626;font-weight:700}}
+.cmp-wrap{{max-height:260px;overflow-y:auto;border:1px solid var(--bd);border-radius:7px;margin-top:4px}}
+.cmp-tbl{{width:100%;border-collapse:collapse;font-size:.78rem}}
+.cmp-tbl th{{background:#f1f5f9;padding:6px 10px;text-align:left;font-size:.7rem;font-weight:600;color:var(--mu);text-transform:uppercase;letter-spacing:.03em;position:sticky;top:0;border-bottom:1px solid var(--bd)}}
+.cmp-tbl td{{padding:6px 10px;border-top:1px solid #f1f5f9}}
+.cmp-tbl tr:first-child td{{border-top:none}}
+.cmp-tbl tr:hover td{{background:var(--hv)}}
+.bg-hit{{background:#d1fae5;color:#065f46;padding:1px 7px;border-radius:4px;font-size:.7rem;font-weight:600;white-space:nowrap;display:inline-block}}
+.bg-miss{{background:#fee2e2;color:#991b1b;padding:1px 7px;border-radius:4px;font-size:.7rem;font-weight:600;white-space:nowrap;display:inline-block}}
 </style>
 </head>
 <body>
@@ -519,6 +552,7 @@ mark{{background:#fef08a;border-radius:2px;padding:0 1px}}
     <label id="sc-yno-lbl" style="display:none"><input type="checkbox" id="sc-yno" checked> Y料號</label>
   </div>
   <span class="ib" id="ib"></span>
+  <button class="btn-sec2" style="padding:7px 13px;font-size:.82rem" onclick="openCompare()">📥 比對清單</button>
 </div>
 
 <div id="banner">
@@ -531,6 +565,44 @@ mark{{background:#fef08a;border-radius:2px;padding:0 1px}}
 <div class="content">
   <div class="tw"><table><thead id="thead"><tr></tr></thead><tbody id="tbody"></tbody></table></div>
   <div class="pg" id="pg"></div>
+</div>
+
+<!-- ── Compare modal ─────────────────────────────────────────────────────── -->
+<div class="modal-bg" id="cmp-modal" onclick="if(event.target===this)closeCompare()">
+  <div class="modal">
+    <h2>📥 比對清單
+      <button onclick="closeCompare()">✕ 關閉</button>
+    </h2>
+
+    <div class="drop-area" id="drop-area"
+      onclick="document.getElementById('cmp-file').click()"
+      ondragover="event.preventDefault();this.classList.add('over')"
+      ondragleave="this.classList.remove('over')"
+      ondrop="event.preventDefault();this.classList.remove('over');handleFile(event.dataTransfer.files[0])">
+      <input type="file" id="cmp-file" accept=".csv,.xlsx,.xls,.txt"
+        onchange="handleFile(this.files[0])">
+      <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"
+        style="margin:0 auto 8px;display:block;opacity:.4">
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+        <polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
+      </svg>
+      <div id="drop-label">點擊上傳 CSV 或 Excel 檔，或拖曳至此</div>
+    </div>
+
+    <div class="or-sep">或手動貼上代碼</div>
+    <textarea id="paste-area" placeholder="每行貼一個料號或國條/Barcode，或整批貼上（自動偵測欄位）"></textarea>
+    <div class="modal-hint">
+      支援格式：<strong>CSV / Excel（.xlsx/.xls）/ 純文字</strong>，自動偵測料號或國條所在欄位。<br>
+      同時搜尋優仕＋暐固兩個品牌，結果可匯出為 CSV。
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn-prim" onclick="runCompare()">🔍 開始比對</button>
+      <button class="btn-sec2" id="dl-csv-btn" onclick="downloadCompareCsv()" disabled>📥 匯出結果 CSV</button>
+      <button class="btn-sec2" onclick="resetCompare()">清除</button>
+    </div>
+    <div id="cmp-result"></div>
+  </div>
 </div>
 
 <script>
@@ -730,6 +802,132 @@ document.getElementById('search').addEventListener('input',e=>{{
 }});
 document.getElementById('clr').addEventListener('click',clrQ);
 ['sc-nm','sc-pno','sc-bc','sc-vd','sc-yno'].forEach(id=>{{const el=document.getElementById(id);if(el)el.addEventListener('change',()=>{{if(q){{pg=1;render()}}}});}});
+
+// ── Compare feature ───────────────────────────────────────────────────────────
+let _cmpData = null;   // last compare results
+let _parsedCodes = []; // codes parsed from file/paste
+
+// Build fast lookup: code (lower) -> {{品牌, 分類, 品名, 料號, barcode, y料號}}
+function buildLookup() {{
+  const lk = {{}};
+  function add(r, 品牌, 分類) {{
+    const entry = {{品牌, 分類, 品名:r['品名']||'', 料號:r['料號']||'', barcode:r['barcode']||'', 'y料號':r['y料號']||''}};
+    ['料號','barcode','y料號'].forEach(k=>{{ if(r[k]) lk[String(r[k]).trim().toLowerCase()] = entry; }});
+  }}
+  YS_ALL.forEach(r=>add(r,'優仕',r.__c));
+  WK_ALL.forEach(r=>add(r,'暐固',r.__c));
+  return lk;
+}}
+
+// Parse a 2-D array (rows of cells) → list of candidate codes
+// Detects which column(s) look like 料號 / barcode
+function extractCodes(rows) {{
+  if(!rows.length) return [];
+  const header = rows[0].map(v=>String(v||'').trim().toLowerCase());
+  // Preferred columns by header keyword match
+  const pnoIdx = header.findIndex(h=>h.includes('料號')||h.includes('pno')||h.includes('sku'));
+  const bcIdx  = header.findIndex(h=>h.includes('barcode')||h.includes('國條')||h.includes('條碼'));
+  const codes = [];
+  const dataRows = (pnoIdx>=0||bcIdx>=0) ? rows.slice(1) : rows; // skip header if found
+  dataRows.forEach(row=>{{
+    if(pnoIdx>=0 && row[pnoIdx]) codes.push(String(row[pnoIdx]).trim());
+    if(bcIdx >=0 && row[bcIdx])  codes.push(String(row[bcIdx]).trim());
+    // If no header found, treat every non-empty cell in col 0 as a code
+    if(pnoIdx<0 && bcIdx<0 && row[0]) codes.push(String(row[0]).trim());
+  }});
+  return [...new Set(codes.filter(Boolean))];
+}}
+
+// Handle file upload (CSV or Excel)
+function handleFile(file) {{
+  if(!file) return;
+  document.getElementById('drop-label').textContent = '✓ 已載入：' + file.name;
+  const reader = new FileReader();
+  const ext = file.name.split('.').pop().toLowerCase();
+  if(ext==='xlsx'||ext==='xls') {{
+    reader.onload = e=>{{
+      const wb = XLSX.read(new Uint8Array(e.target.result), {{type:'array'}});
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(ws, {{header:1, defval:''}});
+      _parsedCodes = extractCodes(rows);
+      document.getElementById('paste-area').value = _parsedCodes.join('\n');
+    }};
+    reader.readAsArrayBuffer(file);
+  }} else {{
+    reader.onload = e=>{{
+      const wb = XLSX.read(e.target.result, {{type:'string'}});
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(ws, {{header:1, defval:''}});
+      _parsedCodes = extractCodes(rows);
+      document.getElementById('paste-area').value = _parsedCodes.join('\n');
+    }};
+    reader.readAsText(file, 'UTF-8');
+  }}
+}}
+
+function openCompare() {{
+  document.getElementById('cmp-modal').classList.add('open');
+}}
+function closeCompare() {{
+  document.getElementById('cmp-modal').classList.remove('open');
+}}
+function resetCompare() {{
+  _cmpData = null; _parsedCodes = [];
+  document.getElementById('paste-area').value = '';
+  document.getElementById('drop-label').textContent = '點擊上傳 CSV 或 Excel 檔，或拖曳至此';
+  document.getElementById('cmp-file').value = '';
+  document.getElementById('cmp-result').innerHTML = '';
+  document.getElementById('dl-csv-btn').disabled = true;
+}}
+
+function runCompare() {{
+  const raw = document.getElementById('paste-area').value.trim();
+  const codes = raw ? [...new Set(raw.split(/[\n,\t]+/).map(s=>s.trim()).filter(Boolean))] : _parsedCodes;
+  if(!codes.length) {{ alert('請先上傳檔案或貼上代碼'); return; }}
+  const lk = buildLookup();
+  _cmpData = codes.map(c=>{{
+    const m = lk[c.toLowerCase()];
+    return m ? {{查詢代碼:c, 狀態:'已收錄', 品牌:m.品牌, 分類:m.分類, 品名:m.品名, 料號:m.料號, barcode:m.barcode, 'y料號':m['y料號']}}
+             : {{查詢代碼:c, 狀態:'未收錄', 品牌:'', 分類:'', 品名:'', 料號:'', barcode:'', 'y料號':''}};
+  }});
+  const hit = _cmpData.filter(r=>r.狀態==='已收錄').length;
+  const miss = _cmpData.length - hit;
+  document.getElementById('dl-csv-btn').disabled = false;
+  const rows = _cmpData.map(r=>`
+    <tr>
+      <td>${{esc(r.查詢代碼)}}</td>
+      <td><span class="${{r.狀態==='已收錄'?'bg-hit':'bg-miss'}}">${{r.狀態}}</span></td>
+      <td>${{esc(r.品牌)}}</td>
+      <td><span class="cat-b" style="display:${{r.分類?'inline-block':'none'}}">${{esc(r.分類)}}</span></td>
+      <td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${{esc(r.品名)}}">${{esc(r.品名)}}</td>
+      <td class="pno">${{esc(r.料號)}}</td>
+    </tr>`).join('');
+  document.getElementById('cmp-result').innerHTML = `
+    <div class="cmp-summary">
+      共 <strong>${{_cmpData.length}}</strong> 筆 ·
+      <span class="cmp-hit">✓ 已收錄 ${{hit}} 筆</span>
+      <span class="cmp-miss">✗ 未收錄 ${{miss}} 筆</span>
+    </div>
+    <div class="cmp-wrap">
+      <table class="cmp-tbl">
+        <thead><tr><th>查詢代碼</th><th>狀態</th><th>品牌</th><th>分類</th><th>品名</th><th>料號</th></tr></thead>
+        <tbody>${{rows}}</tbody>
+      </table>
+    </div>`;
+}}
+
+function downloadCompareCsv() {{
+  if(!_cmpData) return;
+  const cols = ['查詢代碼','狀態','品牌','分類','品名','料號','barcode','y料號'];
+  const lines = [cols, ..._cmpData.map(r=>cols.map(k=>`"${{String(r[k]||'').replace(/"/g,'""')}}"`))]
+    .map(r=>r.join(',')).join('\r\n');
+  const blob = new Blob(['﻿'+lines], {{type:'text/csv;charset=utf-8'}});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  const d = new Date().toISOString().slice(0,10);
+  a.download = `比對結果_${{d}}.csv`;
+  a.click();
+}}
 
 // Init
 setBrand('ys');
