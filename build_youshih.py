@@ -806,12 +806,15 @@ document.getElementById('clr').addEventListener('click',clrQ);
 let _cmpData = null;   // last compare results
 let _parsedCodes = []; // codes parsed from file/paste
 
-// Build fast lookup: code (lower) -> {{品牌, 分類, 品名, 料號, barcode, y料號}}
+// Build fast lookup: code (lower) -> {{品牌, 分類, __row: full_row}}
 function buildLookup() {{
   const lk = {{}};
   function add(r, 品牌, 分類) {{
-    const entry = {{品牌, 分類, 品名:r['品名']||'', 料號:r['料號']||'', barcode:r['barcode']||'', 'y料號':r['y料號']||''}};
-    ['料號','barcode','y料號'].forEach(k=>{{ if(r[k]) lk[String(r[k]).trim().toLowerCase()] = entry; }});
+    const row = Object.assign({{}}, r); delete row.__c;
+    const entry = {{品牌, 分類, __row: row}};
+    if(r['料號'])  lk[String(r['料號']).trim().toLowerCase()]  = entry;
+    if(r['barcode']) lk[String(r['barcode']).trim().toLowerCase()] = entry;
+    if(r['y料號']) lk[String(r['y料號']).trim().toLowerCase()] = entry;
   }}
   YS_ALL.forEach(r=>add(r,'優仕',r.__c));
   WK_ALL.forEach(r=>add(r,'暐固',r.__c));
@@ -886,30 +889,38 @@ function runCompare() {{
   const lk = buildLookup();
   _cmpData = codes.map(c=>{{
     const m = lk[c.toLowerCase()];
-    return m ? {{查詢代碼:c, 狀態:'已收錄', 品牌:m.品牌, 分類:m.分類, 品名:m.品名, 料號:m.料號, barcode:m.barcode, 'y料號':m['y料號']}}
-             : {{查詢代碼:c, 狀態:'未收錄', 品牌:'', 分類:'', 品名:'', 料號:'', barcode:'', 'y料號':''}};
+    if(m) return Object.assign({{查詢代碼:c, 狀態:'已收錄', 品牌:m.品牌, 分類:m.分類}}, m.__row);
+    return {{查詢代碼:c, 狀態:'未收錄'}};
   }});
   const hit = _cmpData.filter(r=>r.狀態==='已收錄').length;
   const miss = _cmpData.length - hit;
   document.getElementById('dl-csv-btn').disabled = false;
-  const rows = _cmpData.map(r=>`
-    <tr>
-      <td>${{esc(r.查詢代碼)}}</td>
+  const rows = _cmpData.map(r=>{{
+    const vd = r['廠商']||r['供應商']||'';
+    const nm = r['品名']||'';
+    const pno = r['料號']||'';
+    const bc = r['barcode']||'';
+    return `<tr>
+      <td class="pno">${{esc(r.查詢代碼)}}</td>
       <td><span class="${{r.狀態==='已收錄'?'bg-hit':'bg-miss'}}">${{r.狀態}}</span></td>
-      <td>${{esc(r.品牌)}}</td>
-      <td><span class="cat-b" style="display:${{r.分類?'inline-block':'none'}}">${{esc(r.分類)}}</span></td>
-      <td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${{esc(r.品名)}}">${{esc(r.品名)}}</td>
-      <td class="pno">${{esc(r.料號)}}</td>
-    </tr>`).join('');
+      <td>${{esc(r.品牌||'')}}</td>
+      <td>${{r.分類?`<span class="cat-b">${{esc(r.分類)}}</span>`:''}}</td>
+      <td>${{esc(vd)}}</td>
+      <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${{esc(nm)}}">${{esc(nm)}}</td>
+      <td class="pno">${{esc(pno)}}</td>
+      <td class="bc">${{esc(bc)}}</td>
+    </tr>`;
+  }}).join('');
   document.getElementById('cmp-result').innerHTML = `
     <div class="cmp-summary">
       共 <strong>${{_cmpData.length}}</strong> 筆 ·
       <span class="cmp-hit">✓ 已收錄 ${{hit}} 筆</span>
       <span class="cmp-miss">✗ 未收錄 ${{miss}} 筆</span>
+      <small style="color:var(--mu);margin-left:4px">（完整欄位見匯出 CSV）</small>
     </div>
     <div class="cmp-wrap">
       <table class="cmp-tbl">
-        <thead><tr><th>查詢代碼</th><th>狀態</th><th>品牌</th><th>分類</th><th>品名</th><th>料號</th></tr></thead>
+        <thead><tr><th>查詢代碼</th><th>狀態</th><th>品牌</th><th>分類</th><th>廠商/供應商</th><th>品名</th><th>料號</th><th>barcode</th></tr></thead>
         <tbody>${{rows}}</tbody>
       </table>
     </div>`;
@@ -917,10 +928,20 @@ function runCompare() {{
 
 function downloadCompareCsv() {{
   if(!_cmpData) return;
-  const cols = ['查詢代碼','狀態','品牌','分類','品名','料號','barcode','y料號'];
-  const lines = [cols, ..._cmpData.map(r=>cols.map(k=>`"${{String(r[k]||'').replace(/"/g,'""')}}"`))]
+  // Full column sets per brand
+  const YS_COLS = ['廠商','料號','barcode','品名','進價','售價','建檔日期'];
+  const WK_COLS = ['供應商','料號','barcode','y料號','品名','t1未稅','t1含稅','t2七階','市場售價','t2未稅','更新日期'];
+  // Detect which brands appear in results
+  const brands = new Set(_cmpData.filter(r=>r.狀態==='已收錄').map(r=>r.品牌));
+  let dataCols;
+  if(brands.size===1 && brands.has('優仕')) dataCols=YS_COLS;
+  else if(brands.size===1 && brands.has('暐固')) dataCols=WK_COLS;
+  else dataCols=[...new Set([...YS_COLS,...WK_COLS])];
+  const allCols = ['查詢代碼','狀態','品牌','分類',...dataCols];
+  const q = v=>`"${{String(v==null?'':v).replace(/"/g,'""')}}"`;
+  const lines = [allCols.map(q), ..._cmpData.map(r=>allCols.map(k=>q(r[k])))]
     .map(r=>r.join(',')).join('\\r\\n');
-  const blob = new Blob(['﻿'+lines], {{type:'text/csv;charset=utf-8'}});
+  const blob = new Blob(['\\ufeff'+lines], {{type:'text/csv;charset=utf-8'}});
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
   const d = new Date().toISOString().slice(0,10);
