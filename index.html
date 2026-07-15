@@ -131,7 +131,7 @@ mark{background:#fef08a;border-radius:2px;padding:0 1px}
 <body>
 <header>
   <h1>配件產品目錄</h1>
-  <p>優仕 15,258 筆 · 暐固 17,308 筆 · 最後更新：2026-07-06</p>
+  <p>優仕 15,258 筆 · 暐固 17,308 筆 · 最後更新：2026-07-15</p>
 </header>
 
 <div class="brand-bar">
@@ -146,7 +146,7 @@ mark{background:#fef08a;border-radius:2px;padding:0 1px}
 <div class="toolbar">
   <div class="sw">
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-    <input type="text" id="search" placeholder="搜尋品名、料號、國條/Barcode…（跨所有分類）">
+    <input type="text" id="search" placeholder="多關鍵字空格分隔＝同時符合，例：尚宏 保護套；-詞 可排除（跨所有分類）">
     <button id="clr">✕</button>
   </div>
   <div class="scope">
@@ -157,6 +157,13 @@ mark{background:#fef08a;border-radius:2px;padding:0 1px}
     <label><input type="checkbox" id="sc-vd" checked> 供應商/廠商</label>
     <label id="sc-yno-lbl" style="display:none"><input type="checkbox" id="sc-yno" checked> Y料號</label>
   </div>
+  <div class="scope">
+    <span>建檔/更新日期：</span>
+    <input type="date" id="d-from" style="font:inherit;padding:3px 6px;border:1px solid #cbd5e1;border-radius:6px">
+    <span>～</span>
+    <input type="date" id="d-to" style="font:inherit;padding:3px 6px;border:1px solid #cbd5e1;border-radius:6px">
+    <button id="d-clr" onclick="clrDate()" style="display:none;padding:3px 9px;font-size:.78rem;border:1px solid #cbd5e1;border-radius:6px;background:#fff;cursor:pointer">清除日期</button>
+  </div>
   <span class="ib" id="ib"></span>
   <button class="btn-sec2" style="padding:7px 13px;font-size:.82rem" onclick="openCompare()">📥 比對清單</button>
 </div>
@@ -164,7 +171,7 @@ mark{background:#fef08a;border-radius:2px;padding:0 1px}
 <div id="banner">
   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
   <span>跨分類搜尋：<strong id="bq"></strong> — <strong id="bc2"></strong> 筆，來自 <strong id="bcats"></strong> 個分類</span>
-  <button onclick="clrQ()">清除搜尋</button>
+  <button onclick="clrAll()">清除搜尋</button>
 </div>
 
 <div class="tabs-wrap"><div class="tabs" id="tabs"></div></div>
@@ -222,7 +229,7 @@ Object.entries(YS).forEach(([c,rs])=>rs.forEach(r=>YS_ALL.push({...r,__c:c})));
 Object.entries(WK).forEach(([c,rs])=>rs.forEach(r=>WK_ALL.push({...r,__c:c})));
 
 // ── State ─────────────────────────────────────────────────────────────────────
-let brand='ys', cur='', q='', sc='', sd=1, pg=1;
+let brand='ys', cur='', q='', sc='', sd=1, pg=1, dFrom='', dTo='';
 const PS=100;
 
 // ── Brand columns config ──────────────────────────────────────────────────────
@@ -251,27 +258,60 @@ const COLS = {
   ]
 };
 const SEARCH_KEYS = {
-  ys: {nm:'品名', pno:'料號', bc:'barcode', vd:'廠商'},
-  wk: {nm:'品名', pno:'料號', bc:'barcode', vd:'供應商', yno:'y料號'},
+  ys: {nm:'品名', pno:'料號', bc:'barcode', vd:'廠商', dt:'建檔日期'},
+  wk: {nm:'品名', pno:'料號', bc:'barcode', vd:'供應商', yno:'y料號', dt:'更新日期'},
 };
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
-function hi(t,q){
-  if(!q)return esc(t);
-  const r=new RegExp('('+q.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+')','gi');
-  return esc(t).replace(r,'<mark>$1</mark>');
+// 正規化：全形英數/符號→半形、全形空白→半形、轉小寫，讓料號/條碼打全形也能命中
+function norm(s){return String(s||'').replace(/[\uFF01-\uFF5E]/g,ch=>String.fromCharCode(ch.charCodeAt(0)-0xFEE0)).replace(/\u3000/g,' ').toLowerCase()}
+// 把搜尋字串拆成多個詞：空白分隔，AND 關係；以 - 開頭者為排除詞
+function parseTerms(str){
+  return norm(str).split(/\s+/).filter(Boolean).map(tok=>{
+    if(tok.length>1&&tok[0]==='-')return{neg:true,w:tok.slice(1)};
+    return{neg:false,w:tok};
+  }).filter(t=>t.w);
+}
+function hi(t,terms){
+  const et=esc(t);
+  const pos=(terms||[]).filter(x=>!x.neg&&x.w).map(x=>x.w.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'));
+  if(!pos.length)return et;
+  const r=new RegExp('('+pos.join('|')+')','gi');
+  return et.replace(r,'<mark>$1</mark>');
 }
 function fmtP(v){const n=parseInt(v);return isNaN(n)?'—':'$'+n.toLocaleString()}
 function data(){return brand==='ys'?YS:WK}
 function allRows(){return brand==='ys'?YS_ALL:WK_ALL}
 function scope(){return{nm:document.getElementById('sc-nm').checked,pno:document.getElementById('sc-pno').checked,bc:document.getElementById('sc-bc').checked,vd:document.getElementById('sc-vd').checked,yno:(document.getElementById('sc-yno')||{}).checked}}
-function matchRow(r,lq,s,sk){
-  return(s.nm&&(r[sk.nm]||'').toLowerCase().includes(lq))||
-        (s.pno&&(r[sk.pno]||'').toLowerCase().includes(lq))||
-        (s.bc&&(r[sk.bc]||'').toLowerCase().includes(lq))||
-        (s.vd&&(r[sk.vd]||'').toLowerCase().includes(lq))||
-        (s.yno&&sk.yno&&(r[sk.yno]||'').toLowerCase().includes(lq));
+// 依勾選欄位取出該筆可搜尋文字（已正規化）
+function rowFields(r,s,sk){
+  const f=[];
+  if(s.nm)f.push(norm(r[sk.nm]));
+  if(s.pno)f.push(norm(r[sk.pno]));
+  if(s.bc)f.push(norm(r[sk.bc]));
+  if(s.vd)f.push(norm(r[sk.vd]));
+  if(s.yno&&sk.yno)f.push(norm(r[sk.yno]));
+  return f;
+}
+// 多關鍵字：每個詞需至少命中一個勾選欄位(OR)，且所有詞都要命中(AND)；排除詞只要命中即淘汰
+function matchRow(r,terms,s,sk){
+  const f=rowFields(r,s,sk);
+  for(const t of terms){
+    const hit=f.some(x=>x.includes(t.w));
+    if(t.neg){if(hit)return false;}
+    else{if(!hit)return false;}
+  }
+  return true;
+}
+// 日期區間：對應品牌的建檔/更新日期(ISO字串可直接比大小)；有篩選但該筆無日期則排除
+function matchDate(r,sk){
+  if(!dFrom&&!dTo)return true;
+  const d=(r[sk.dt]||'').slice(0,10);
+  if(!d)return false;
+  if(dFrom&&d<dFrom)return false;
+  if(dTo&&d>dTo)return false;
+  return true;
 }
 
 // ── Brand switch ──────────────────────────────────────────────────────────────
@@ -310,11 +350,13 @@ function buildThead(withCat){
 // ── Render ─────────────────────────────────────────────────────────────────────
 function render(){
   const D=data(), sk=SEARCH_KEYS[brand], cols=COLS[brand], s=scope();
-  const lq=q.toLowerCase();
+  const terms=parseTerms(q);
+  const dateOn=!!(dFrom||dTo);
+  const active=terms.length>0||dateOn;
   let rows, catCol=false;
 
-  if(q){
-    rows=allRows().filter(r=>matchRow(r,lq,s,sk));
+  if(active){
+    rows=allRows().filter(r=>matchRow(r,terms,s,sk)&&matchDate(r,sk));
     catCol=true;
   } else {
     rows=D[cur]||[];
@@ -335,19 +377,21 @@ function render(){
   const sl=rows.slice((pg-1)*PS,pg*PS);
 
   // Update tabs
-  document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active',!q&&t.dataset.cat===cur));
+  document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active',!active&&t.dataset.cat===cur));
 
   // Banner
   const bn=document.getElementById('banner');
-  if(q){
-    document.getElementById('bq').textContent=q;
+  if(active){
+    let lbl=q;
+    if(dateOn){const dl='日期 '+(dFrom||'…')+'～'+(dTo||'…');lbl=lbl?lbl+' · '+dl:dl;}
+    document.getElementById('bq').textContent=lbl;
     document.getElementById('bc2').textContent=tot.toLocaleString();
     document.getElementById('bcats').textContent=new Set(rows.map(r=>r.__c)).size;
     bn.classList.add('on');
   } else bn.classList.remove('on');
 
   // Info
-  document.getElementById('ib').textContent=q?tot.toLocaleString()+' 筆':'顯示 '+tot.toLocaleString()+' 筆';
+  document.getElementById('ib').textContent=active?tot.toLocaleString()+' 筆':'顯示 '+tot.toLocaleString()+' 筆';
 
   // Thead
   buildThead(catCol);
@@ -362,7 +406,7 @@ function render(){
   // Tbody
   const tb=document.getElementById('tbody');
   if(!sl.length){
-    tb.innerHTML=`<tr><td colspan="${(catCol?1:0)+cols.length}" class="empty">查無符合「${esc(q)}」的產品</td></tr>`;
+    tb.innerHTML=`<tr><td colspan="${(catCol?1:0)+cols.length}" class="empty">查無符合條件的產品</td></tr>`;
   } else {
     tb.innerHTML=sl.map(r=>{
       const catCell=catCol?`<td><span class="cat-b">${esc(r.__c)}</span></td>`:'';
@@ -370,7 +414,7 @@ function render(){
         const v=r[c.key];
         let rendered;
         if(c.raw){rendered=c.fmt(v||'')}
-        else{rendered=`<span class="${c.cls}">${hi(c.fmt(v||''),q)}</span>`}
+        else{rendered=`<span class="${c.cls}">${hi(c.fmt(v||''),terms)}</span>`}
         return`<td>${rendered}</td>`;
       }).join('');
       return`<tr>${catCell}${cells}</tr>`;
@@ -399,6 +443,18 @@ function clrQ(){
   document.getElementById('search').value=''; q=''; pg=1;
   document.getElementById('clr').style.display='none'; render();
 }
+function clrDate(){
+  dFrom=''; dTo='';
+  const a=document.getElementById('d-from'),b=document.getElementById('d-to');
+  if(a)a.value=''; if(b)b.value='';
+  document.getElementById('d-clr').style.display='none';
+  pg=1; render();
+}
+function clrAll(){ // 清除搜尋：關鍵字＋日期一起清
+  document.getElementById('search').value=''; q='';
+  document.getElementById('clr').style.display='none';
+  clrDate();
+}
 
 // Search
 let tmr;
@@ -407,7 +463,13 @@ document.getElementById('search').addEventListener('input',e=>{
   tmr=setTimeout(()=>{q=e.target.value.trim();pg=1;document.getElementById('clr').style.display=q?'block':'none';render()},180);
 });
 document.getElementById('clr').addEventListener('click',clrQ);
-['sc-nm','sc-pno','sc-bc','sc-vd','sc-yno'].forEach(id=>{const el=document.getElementById(id);if(el)el.addEventListener('change',()=>{if(q){pg=1;render()}});});
+['sc-nm','sc-pno','sc-bc','sc-vd','sc-yno'].forEach(id=>{const el=document.getElementById(id);if(el)el.addEventListener('change',()=>{if(q||dFrom||dTo){pg=1;render()}});});
+// 日期篩選
+['d-from','d-to'].forEach(id=>{const el=document.getElementById(id);if(el)el.addEventListener('change',()=>{
+  dFrom=document.getElementById('d-from').value; dTo=document.getElementById('d-to').value;
+  document.getElementById('d-clr').style.display=(dFrom||dTo)?'inline-block':'none';
+  pg=1; render();
+});});
 
 // ── Compare feature ───────────────────────────────────────────────────────────
 let _cmpData = null;   // last compare results
