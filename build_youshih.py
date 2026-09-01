@@ -1221,6 +1221,8 @@ async function runCostCompare() {{
     const costCol = findCostCol(keys);
     const lookup = cf.type==='ys' ? lk.ys : cf.type==='wk' ? lk.wk_t1 : lk.wk_t2;
     const costLabel = cf.type==='ys' ? '進價(未稅)' : cf.type==='wk' ? 'T1成本(未稅)' : 'T2出優鋭成本(未稅)';
+    cf.costCol = costCol;
+    cf.costLabel = costLabel;
     cf.result = rows.map(row => {{
       const code = String(row[codeCol]||'').trim();
       const inputCostRaw = costCol ? String(row[costCol]||'').trim() : '';
@@ -1289,38 +1291,74 @@ async function runCostCompare() {{
   }}).join('');
 }}
 
+function findNameCol(keys) {{
+  for(const p of ['品名','name','名稱']) {{
+    const f = keys.find(k=>k.toLowerCase().includes(p.toLowerCase()));
+    if(f) return f;
+  }}
+  return keys[1]||keys[0]||'';
+}}
+
 function exportCostExcel() {{
   if(!_costResults) return;
   const validResults = _costResults.filter(cf => cf.result.length > 0);
   if(!validResults.length) {{ alert('沒有可匯出的資料'); return; }}
 
-  // One Excel file per source file, named originalName-01.xlsx
+  const anomalyWb = XLSX.utils.book_new();
+
   validResults.forEach(cf => {{
-    const costLabel = cf.type==='ys'?'進價(未稅)':cf.type==='wk'?'T1成本(未稅)':'T2出優鋭成本(未稅)';
-    const origKeys = Object.keys(cf.result[0]).filter(k=>!k.startsWith('__'));
-    const extraDefs = [
-      {{key:'__品名(目錄)', label:'品名(目錄)'}},
-      {{key:'__分類',       label:'分類'}},
-      {{key:'__目錄'+costLabel, label:'目錄'+costLabel}},
-      {{key:'__差異',       label:'成本差異'}},
-      {{key:'__狀態',       label:'比對狀態'}},
-    ].filter(c => Object.prototype.hasOwnProperty.call(cf.result[0], c.key));
+    const costCol   = cf.costCol;
+    const costLabel = cf.costLabel;
+    const origKeys  = Object.keys(cf.result[0]).filter(k => !k.startsWith('__'));
 
-    const headers = [...origKeys, ...extraDefs.map(c=>c.label)];
-    const rows = cf.result.map(r => [
-      ...origKeys.map(k => r[k]===undefined?'':r[k]),
-      ...extraDefs.map(c => r[c.key]===undefined?'':r[c.key])
-    ]);
-
-    const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
-    ws['!cols'] = headers.map(()=>({{wch:20}}));
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Sheet1');
-
-    // filename = 原檔名(去副檔名) + -01.xlsx
+    // ── 1. 主檔：原始格式，單位成本欄填入目錄成本 ──────────────────────────
+    const mainRows = cf.result.map(r => origKeys.map(k => {{
+      if(k === costCol) {{
+        const catCost = r['__目錄'+costLabel];
+        // 若有目錄成本就填入，否則保留原值
+        return (catCost !== '' && catCost !== undefined && catCost !== null) ? catCost : (r[k]===undefined?'':r[k]);
+      }}
+      return r[k]===undefined ? '' : r[k];
+    }}));
+    const mainWs = XLSX.utils.aoa_to_sheet([origKeys, ...mainRows]);
+    mainWs['!cols'] = origKeys.map(()=>({{wch:20}}));
+    const mainWb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(mainWb, mainWs, 'Sheet1');
     const base = cf.name.replace(/\.[^.]+$/, '');
-    XLSX.writeFile(wb, base + '-01.xlsx');
+    XLSX.writeFile(mainWb, base + '-01.xlsx');
+
+    // ── 2. 異常 sheet：未收錄 + 成本不符 ───────────────────────────────────
+    const anomalyRows = cf.result.filter(r =>
+      r.__flag === 'err' || (r.__狀態 && r.__狀態.startsWith('❌')) ||
+      r.__flag === 'warn'
+    );
+    const sheetName = base.slice(0, 28);
+    let anomalyWs;
+    if(!anomalyRows.length) {{
+      anomalyWs = XLSX.utils.aoa_to_sheet([['結果'], ['無差異']]);
+      anomalyWs['!cols'] = [{{wch:12}}];
+    }} else {{
+      const nameCol = findNameCol(origKeys);
+      const hdr = ['品號','品名(原始)','品名(目錄)','分類','單位成本(原始)', costLabel+'(目錄)','成本差異','狀態'];
+      const aRows = anomalyRows.map(r => [
+        r['__品號']||'',
+        r[nameCol]||'',
+        r['__品名(目錄)']||'',
+        r['__分類']||'',
+        costCol ? (r[costCol]===undefined?'':r[costCol]) : '',
+        r['__目錄'+costLabel]||'',
+        r['__差異']||'',
+        r['__狀態']||''
+      ]);
+      anomalyWs = XLSX.utils.aoa_to_sheet([hdr, ...aRows]);
+      anomalyWs['!cols'] = hdr.map(()=>({{wch:22}}));
+    }}
+    XLSX.utils.book_append_sheet(anomalyWb, anomalyWs, sheetName);
   }});
+
+  // ── 3. 異常報告：一次下載 ───────────────────────────────────────────────
+  const d = new Date().toISOString().slice(0,10);
+  XLSX.writeFile(anomalyWb, `成本核對異常報告_${{d}}.xlsx`);
 }}
 
 // Init
