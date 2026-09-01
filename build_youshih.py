@@ -488,6 +488,35 @@ mark{{background:#fef08a;border-radius:2px;padding:0 1px}}
   .nm{{max-width:160px}}
 }}
 
+/* ── Modal tabs ────────────────────────────────────────────────────────────── */
+.modal-tab-bar{{display:flex;gap:0;margin:-4px -4px 16px;border-bottom:2px solid var(--bd)}}
+.modal-tab{{padding:9px 16px;font-size:.85rem;font-weight:500;cursor:pointer;border:none;background:none;color:var(--mu);border-bottom:2px solid transparent;margin-bottom:-2px;transition:all .15s;white-space:nowrap}}
+.modal-tab:hover{{color:var(--p)}}
+.modal-tab.active{{color:var(--p);border-bottom-color:var(--p);font-weight:600}}
+.modal-panel{{display:none}}.modal-panel.active{{display:block}}
+/* Cost file list */
+.cost-files{{list-style:none;display:flex;flex-direction:column;gap:6px;margin:10px 0}}
+.cfi{{display:flex;align-items:center;gap:8px;padding:7px 10px;background:var(--bg);border:1px solid var(--bd);border-radius:7px;font-size:.81rem}}
+.cfi .fn{{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--tx)}}
+.cfi .rm{{background:none;border:none;cursor:pointer;color:var(--mu);font-size:.85rem;padding:0 4px;line-height:1}}
+.ctag{{padding:1px 8px;border-radius:4px;font-size:.71rem;font-weight:600;white-space:nowrap}}
+.ctag-ys{{background:#d1fae5;color:#065f46}}
+.ctag-wk{{background:#dbeafe;color:#1e40af}}
+.ctag-yr{{background:#fce7f3;color:#9d174d}}
+.ctag-unk{{background:#fef3c7;color:#92400e}}
+/* Cost drop zone */
+.cost-drop{{border:2px dashed var(--bd);border-radius:8px;padding:22px;text-align:center;cursor:pointer;color:var(--mu);font-size:.84rem;transition:border-color .15s;margin-bottom:6px}}
+.cost-drop:hover,.cost-drop.over{{border-color:var(--p);color:var(--p)}}
+.cost-drop input{{display:none}}
+/* Cost result */
+.cost-summary{{display:flex;gap:12px;flex-wrap:wrap;font-size:.83rem;margin:14px 0 6px;align-items:center}}
+.cs-ok{{color:#059669;font-weight:700}}.cs-err{{color:#dc2626;font-weight:700}}.cs-miss{{color:#92400e;font-weight:700}}
+.cost-section{{margin-top:12px}}
+.cost-section h3{{font-size:.82rem;font-weight:700;color:var(--tx);margin-bottom:5px;padding:4px 8px;border-radius:5px}}
+.cost-section.sec-ys h3{{background:#d1fae5;color:#065f46}}
+.cost-section.sec-wk h3{{background:#dbeafe;color:#1e40af}}
+.cost-section.sec-yr h3{{background:#fce7f3;color:#9d174d}}
+
 /* ── Compare modal ─────────────────────────────────────────────────────────── */
 .modal-bg{{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:200;align-items:center;justify-content:center;display:none}}
 .modal-bg.open{{display:flex}}
@@ -573,41 +602,76 @@ mark{{background:#fef08a;border-radius:2px;padding:0 1px}}
   <div class="pg" id="pg"></div>
 </div>
 
-<!-- ── Compare modal ─────────────────────────────────────────────────────── -->
+<!-- ── Compare / Cost modal ───────────────────────────────────────────────── -->
 <div class="modal-bg" id="cmp-modal" onclick="if(event.target===this)closeCompare()">
   <div class="modal">
-    <h2>📥 比對清單
+    <h2 style="margin-bottom:0">
+      <span id="modal-title">📥 比對清單</span>
       <button onclick="closeCompare()">✕ 關閉</button>
     </h2>
-
-    <div class="drop-area" id="drop-area"
-      onclick="document.getElementById('cmp-file').click()"
-      ondragover="event.preventDefault();this.classList.add('over')"
-      ondragleave="this.classList.remove('over')"
-      ondrop="event.preventDefault();this.classList.remove('over');handleFile(event.dataTransfer.files[0])">
-      <input type="file" id="cmp-file" accept=".csv,.xlsx,.xls,.txt"
-        onchange="handleFile(this.files[0])">
-      <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"
-        style="margin:0 auto 8px;display:block;opacity:.4">
-        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-        <polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
-      </svg>
-      <div id="drop-label">點擊上傳 CSV 或 Excel 檔，或拖曳至此</div>
+    <div class="modal-tab-bar">
+      <button class="modal-tab active" id="tab-cmp" onclick="switchModalTab('cmp')">📋 料號比對</button>
+      <button class="modal-tab" id="tab-cost" onclick="switchModalTab('cost')">💰 成本核對</button>
     </div>
 
-    <div class="or-sep">或手動貼上代碼</div>
-    <textarea id="paste-area" placeholder="每行貼一個料號或國條/Barcode，或整批貼上（自動偵測欄位）"></textarea>
-    <div class="modal-hint">
-      支援格式：<strong>CSV / Excel（.xlsx/.xls）/ 純文字</strong>，自動偵測料號或國條所在欄位。<br>
-      同時搜尋優仕＋暐固兩個品牌，結果可匯出為 CSV。
+    <!-- ── 料號比對 panel ─────────────────────────────────────────────────── -->
+    <div class="modal-panel active" id="panel-cmp">
+      <div class="drop-area" id="drop-area"
+        onclick="document.getElementById('cmp-file').click()"
+        ondragover="event.preventDefault();this.classList.add('over')"
+        ondragleave="this.classList.remove('over')"
+        ondrop="event.preventDefault();this.classList.remove('over');handleFile(event.dataTransfer.files[0])">
+        <input type="file" id="cmp-file" accept=".csv,.xlsx,.xls,.txt"
+          onchange="handleFile(this.files[0])">
+        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"
+          style="margin:0 auto 8px;display:block;opacity:.4">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+          <polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
+        </svg>
+        <div id="drop-label">點擊上傳 CSV 或 Excel 檔，或拖曳至此</div>
+      </div>
+      <div class="or-sep">或手動貼上代碼</div>
+      <textarea id="paste-area" placeholder="每行貼一個料號或國條/Barcode，或整批貼上（自動偵測欄位）"></textarea>
+      <div class="modal-hint">
+        支援格式：<strong>CSV / Excel（.xlsx/.xls）/ 純文字</strong>，自動偵測料號或國條所在欄位。<br>
+        同時搜尋優仕＋暐固兩個品牌，結果可匯出為 CSV。
+      </div>
+      <div class="modal-actions">
+        <button class="btn-prim" onclick="runCompare()">🔍 開始比對</button>
+        <button class="btn-sec2" id="dl-csv-btn" onclick="downloadCompareCsv()" disabled>📥 匯出結果 CSV</button>
+        <button class="btn-sec2" onclick="resetCompare()">清除</button>
+      </div>
+      <div id="cmp-result"></div>
     </div>
 
-    <div class="modal-actions">
-      <button class="btn-prim" onclick="runCompare()">🔍 開始比對</button>
-      <button class="btn-sec2" id="dl-csv-btn" onclick="downloadCompareCsv()" disabled>📥 匯出結果 CSV</button>
-      <button class="btn-sec2" onclick="resetCompare()">清除</button>
+    <!-- ── 成本核對 panel ─────────────────────────────────────────────────── -->
+    <div class="modal-panel" id="panel-cost">
+      <div class="cost-drop" id="cost-drop"
+        onclick="document.getElementById('cost-files-input').click()"
+        ondragover="event.preventDefault();this.classList.add('over')"
+        ondragleave="this.classList.remove('over')"
+        ondrop="event.preventDefault();this.classList.remove('over');addCostFiles(event.dataTransfer.files)">
+        <input type="file" id="cost-files-input" accept=".xlsx,.xls,.csv" multiple
+          onchange="addCostFiles(this.files)">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"
+          style="margin:0 auto 7px;display:block;opacity:.4">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+          <polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
+        </svg>
+        可同時上傳多個「上傳成本表」Excel 檔（自動偵測優仕/暐固/優鋭）
+      </div>
+      <ul class="cost-files" id="cost-file-list"></ul>
+      <div class="modal-hint" style="margin-top:4px">
+        <strong>檔名規則：</strong>含「上傳成本表-優仕」→ 對比進價（未稅）；含「上傳成本表-暐固」→ T1成本（未稅）；含「上傳成本表-優鋭」→ T2出優鋭成本（未稅）<br>
+        <strong>成本驗證：</strong>若檔案內「單位成本」欄已有數值，將與網頁成本交叉比對，不符者以 ⚠️ 標示。
+      </div>
+      <div class="modal-actions" style="margin-top:10px">
+        <button class="btn-prim" onclick="runCostCompare()">🔍 開始成本核對</button>
+        <button class="btn-sec2" id="dl-xlsx-btn" onclick="exportCostExcel()" disabled>📊 匯出 Excel</button>
+        <button class="btn-sec2" onclick="resetCost()">清除</button>
+      </div>
+      <div id="cost-result"></div>
     </div>
-    <div id="cmp-result"></div>
   </div>
 </div>
 
@@ -1009,6 +1073,244 @@ function downloadCompareCsv() {{
   const d = new Date().toISOString().slice(0,10);
   a.download = `比對結果_${{d}}.csv`;
   a.click();
+}}
+
+// ── Modal tab switcher ───────────────────────────────────────────────────────
+function switchModalTab(tab) {{
+  ['cmp','cost'].forEach(t => {{
+    document.getElementById('tab-'+t).classList.toggle('active', t===tab);
+    document.getElementById('panel-'+t).classList.toggle('active', t===tab);
+  }});
+  document.getElementById('modal-title').textContent =
+    tab==='cmp' ? '📥 比對清單' : '💰 成本核對';
+}}
+
+// ── Cost verification ─────────────────────────────────────────────────────────
+let _costFiles = [];  // {{name, type:'ys'|'wk'|'yr'|null, rows:[], result:[]}}
+let _costResults = null;
+
+function detectCostType(name) {{
+  if(/上傳成本表[-_]?優仕/i.test(name))  return 'ys';
+  if(/上傳成本表[-_]?暐固/i.test(name))  return 'wk';
+  if(/上傳成本表[-_]?優鋭/i.test(name) || /上傳成本表[-_]?優锐/i.test(name)) return 'yr';
+  return null;
+}}
+
+function buildCostLookup() {{
+  const ys = {{}}, wk_t1 = {{}}, wk_t2 = {{}};
+  YS_ALL.forEach(r => {{
+    const code = String(r['料號']||'').trim().toLowerCase();
+    if(code) ys[code] = {{cost: r['進價'], name: r['品名']||'', cat: r.__c||''}};
+  }});
+  WK_ALL.forEach(r => {{
+    const a = String(r['料號']||'').trim().toLowerCase();
+    const y = String(r['y料號']||'').trim().toLowerCase();
+    const entry_t1 = {{cost: r['t1未稅'], name: r['品名']||'', cat: r.__c||'', 料號: r['料號']||'', y料號: r['y料號']||''}};
+    const entry_t2 = {{cost: r['t2未稅'], name: r['品名']||'', cat: r.__c||'', 料號: r['料號']||'', y料號: r['y料號']||''}};
+    if(a) {{ wk_t1[a] = entry_t1; wk_t2[a] = entry_t2; }}
+    if(y) {{ wk_t1[y] = entry_t1; wk_t2[y] = entry_t2; }}
+  }});
+  return {{ys, wk_t1, wk_t2}};
+}}
+
+function addCostFiles(fileList) {{
+  Array.from(fileList).forEach(f => {{
+    if(_costFiles.find(x=>x.name===f.name)) return;
+    _costFiles.push({{name:f.name, type:detectCostType(f.name), file:f, rows:[], result:[]}});
+  }});
+  renderCostFileList();
+}}
+
+function renderCostFileList() {{
+  const ul = document.getElementById('cost-file-list');
+  if(!_costFiles.length) {{ ul.innerHTML=''; return; }}
+  const tagClass = {{ys:'ctag-ys', wk:'ctag-wk', yr:'ctag-yr'}};
+  const tagLabel = {{ys:'優仕', wk:'暐固', yr:'優鋭'}};
+  ul.innerHTML = _costFiles.map((f,i) => `
+    <li class="cfi">
+      <span class="ctag ${{f.type ? tagClass[f.type] : 'ctag-unk'}}">${{f.type ? tagLabel[f.type] : '未知'}}</span>
+      ${{f.name}}
+      <button onclick="_costFiles.splice(${{i}},1);renderCostFileList()" style="margin-left:auto;background:none;border:none;cursor:pointer;color:#999;font-size:15px">✕</button>
+    </li>`).join('');
+}}
+
+function resetCost() {{
+  _costFiles = []; _costResults = null;
+  renderCostFileList();
+  document.getElementById('cost-result').innerHTML = '';
+  document.getElementById('dl-xlsx-btn').disabled = true;
+}}
+
+function parseCostRows(file) {{
+  return new Promise((resolve, reject) => {{
+    const ext = file.name.split('.').pop().toLowerCase();
+    if(ext==='csv') {{
+      const reader = new FileReader();
+      reader.onload = e => {{
+        const text = e.target.result;
+        const lines = text.replace(/\\r\\n/g,'\\n').replace(/\\r/g,'\\n').split('\\n');
+        if(!lines.length) {{ resolve([]); return; }}
+        const sep = lines[0].includes('\\t') ? '\\t' : ',';
+        const header = lines[0].split(sep).map(h=>h.trim().replace(/^"|"$/g,''));
+        const rows = lines.slice(1).filter(l=>l.trim()).map(l => {{
+          const vals = l.split(sep).map(v=>v.trim().replace(/^"|"$/g,''));
+          const obj = {{}};
+          header.forEach((h,i) => obj[h]=vals[i]||'');
+          return obj;
+        }});
+        resolve(rows);
+      }};
+      reader.onerror = reject;
+      reader.readAsText(file,'utf-8');
+    }} else {{
+      const reader = new FileReader();
+      reader.onload = e => {{
+        try {{
+          const wb = XLSX.read(new Uint8Array(e.target.result), {{type:'array'}});
+          const ws = wb.Sheets[wb.SheetNames[0]];
+          const rows = XLSX.utils.sheet_to_json(ws, {{defval:''}});
+          resolve(rows);
+        }} catch(err) {{ reject(err); }}
+      }};
+      reader.onerror = reject;
+      reader.readAsArrayBuffer(file);
+    }}
+  }});
+}}
+
+function findCodeCol(headerKeys) {{
+  const patterns = ['品號','料號','品号','item','sku','code','barcode','國條','条码'];
+  for(const p of patterns) {{
+    const found = headerKeys.find(k => k.toLowerCase().includes(p.toLowerCase()));
+    if(found) return found;
+  }}
+  return headerKeys[0];
+}}
+
+function findCostCol(headerKeys) {{
+  const patterns = ['單位成本','单位成本','成本','cost','price','進價','进价'];
+  for(const p of patterns) {{
+    const found = headerKeys.find(k => k.toLowerCase().includes(p.toLowerCase()));
+    if(found) return found;
+  }}
+  return null;
+}}
+
+async function runCostCompare() {{
+  const unknown = _costFiles.filter(f=>!f.type);
+  if(unknown.length) {{
+    const names = unknown.map(f=>f.name).join('\\n');
+    if(!confirm(`以下檔案未能識別類型（檔名須含「上傳成本表-優仕」/「上傳成本表-暐固」/「上傳成本表-優鋭」）：\\n${{names}}\\n\\n確定跳過這些檔案繼續？`)) return;
+  }}
+  const validFiles = _costFiles.filter(f=>f.type);
+  if(!validFiles.length) {{
+    alert('沒有可比對的成本表（請確認檔名含對應關鍵字）');
+    return;
+  }}
+  const lk = buildCostLookup();
+  const resultDiv = document.getElementById('cost-result');
+  resultDiv.innerHTML = '<p style="color:#888;padding:12px 0">比對中...</p>';
+  const allResults = [];
+  for(const cf of validFiles) {{
+    let rows;
+    try {{ rows = await parseCostRows(cf.file); }}
+    catch(e) {{ rows = []; }}
+    if(!rows.length) {{ cf.result = []; allResults.push(cf); continue; }}
+    const keys = Object.keys(rows[0]);
+    const codeCol = findCodeCol(keys);
+    const costCol = findCostCol(keys);
+    const lookup = cf.type==='ys' ? lk.ys : cf.type==='wk' ? lk.wk_t1 : lk.wk_t2;
+    const costLabel = cf.type==='ys' ? '進價(未稅)' : cf.type==='wk' ? 'T1成本(未稅)' : 'T2出優鋭成本(未稅)';
+    cf.result = rows.map(row => {{
+      const code = String(row[codeCol]||'').trim();
+      const inputCostRaw = costCol ? String(row[costCol]||'').trim() : '';
+      const inputCost = parseFloat(inputCostRaw.replace(/,/g,''));
+      const entry = code ? lookup[code.toLowerCase()] : null;
+      let status, catCost='', diff='', flag='';
+      if(!code) {{ status='⬜ 空白品號'; flag=''; }}
+      else if(!entry) {{ status='❌ 未收錄'; flag=''; }}
+      else {{
+        catCost = entry.cost==null||entry.cost===''?'':String(entry.cost);
+        const catalogNum = parseFloat(String(catCost).replace(/,/g,''));
+        if(inputCostRaw===''||isNaN(inputCost)) {{
+          status='✅ 已收錄（成本未填）';
+          flag='';
+        }} else if(isNaN(catalogNum)||catCost==='') {{
+          status='⚠️ 已收錄（目錄無成本可比對）';
+          flag='warn';
+        }} else {{
+          diff = (inputCost - catalogNum).toFixed(2);
+          const absDiff = Math.abs(inputCost - catalogNum);
+          if(absDiff <= 0.5) {{
+            status='✅ 成本相符';
+            flag='ok';
+          }} else {{
+            status=`⚠️ 成本不符（差異 ${{diff}}）`;
+            flag='err';
+          }}
+        }}
+      }}
+      const r = Object.assign({{}}, row);
+      r['__品號'] = code;
+      r['__狀態'] = status;
+      r['__flag'] = flag;
+      r['__目錄'+costLabel] = catCost;
+      r['__差異'] = diff;
+      if(entry) {{ r['__品名(目錄)'] = entry.name; r['__分類'] = entry.cat; }}
+      return r;
+    }});
+    allResults.push(cf);
+  }}
+  _costResults = allResults;
+  document.getElementById('dl-xlsx-btn').disabled = false;
+  // Render preview
+  const typeClass = {{ys:'sec-ys', wk:'sec-wk', yr:'sec-yr'}};
+  const typeLabel = {{ys:'優仕（比對：進價未稅）', wk:'暐固（比對：T1成本未稅）', yr:'優鋭（比對：T2出優鋭成本未稅）'}};
+  resultDiv.innerHTML = allResults.map(cf => {{
+    const total = cf.result.length;
+    const errs = cf.result.filter(r=>r.__flag==='err').length;
+    const miss = cf.result.filter(r=>r.__狀態&&r.__狀態.startsWith('❌')).length;
+    const summary = `共 ${{total}} 筆｜未收錄 ${{miss}} 筆｜成本不符 <span class="${{errs?'cs-err':'cs-ok'}}">${{errs}}</span> 筆`;
+    return `<div class="cost-section ${{typeClass[cf.type]||''}}">
+      <h3>${{cf.name}}</h3>
+      <p class="cost-summary">${{typeLabel[cf.type]||''}}・${{summary}}</p>
+      <div style="overflow-x:auto;max-height:260px">
+        <table class="tbl">
+          <thead><tr><th>品號</th><th>品名(目錄)</th><th>分類</th><th>單位成本(檔案)</th><th>目錄成本</th><th>差異</th><th>狀態</th></tr></thead>
+          <tbody>${{cf.result.slice(0,200).map(r=>{{
+            const cls = r.__flag==='err'?'cs-err':r.__flag==='ok'?'cs-ok':'';
+            const costLabel2 = cf.type==='ys'?'進價(未稅)':cf.type==='wk'?'T1成本(未稅)':'T2出優鋭成本(未稅)';
+            return `<tr><td>${{r.__品號}}</td><td>${{r['__品名(目錄)']||''}}</td><td>${{r.__分類||''}}</td><td>${{r[findCostCol(Object.keys(r).filter(k=>!k.startsWith('__')))]||''}}</td><td>${{r['__目錄'+costLabel2]||''}}</td><td class="${{cls}}">${{r.__差異}}</td><td class="${{cls}}">${{r.__狀態}}</td></tr>`;
+          }}).join('')}}
+          ${{cf.result.length>200?`<tr><td colspan="7" style="color:#999">僅顯示前200筆，完整資料請匯出Excel</td></tr>`:''}}</tbody>
+        </table>
+      </div>
+    </div>`;
+  }}).join('');
+}}
+
+function exportCostExcel() {{
+  if(!_costResults) return;
+  const wb = XLSX.utils.book_new();
+  const typeLabel = {{ys:'優仕', wk:'暐固', yr:'優鋭'}};
+  _costResults.forEach((cf,idx) => {{
+    if(!cf.result.length) return;
+    // Build header: original cols first, then derived cols
+    const origKeys = Object.keys(cf.result[0]).filter(k=>!k.startsWith('__'));
+    const costLabel = cf.type==='ys'?'進價(未稅)':cf.type==='wk'?'T1成本(未稅)':'T2出優鋭成本(未稅)';
+    const extraKeys = ['__品號','__品名(目錄)','__分類','__目錄'+costLabel,'__差異','__狀態'];
+    const allKeys = [...origKeys, ...extraKeys.filter(k=>Object.prototype.hasOwnProperty.call(cf.result[0],k))];
+    const displayKeys = allKeys.map(k=>k.startsWith('__')?k.replace(/^__/,''):k);
+    const data = [displayKeys, ...cf.result.map(r=>allKeys.map(k=>r[k]===undefined?'':r[k]))];
+    const ws = XLSX.utils.aoa_to_sheet(data);
+    // Color mismatch rows red (column-wise; basic approach)
+    ws['!cols'] = displayKeys.map(()=>({{wch:18}}));
+    const sheetName = (typeLabel[cf.type]||'未知')+'_'+(idx+1);
+    XLSX.utils.book_append_sheet(wb, ws, sheetName.slice(0,31));
+  }});
+  if(!wb.SheetNames.length) {{ alert('沒有可匯出的資料'); return; }}
+  const d = new Date().toISOString().slice(0,10);
+  XLSX.writeFile(wb, `成本核對結果_${{d}}.xlsx`);
 }}
 
 // Init
