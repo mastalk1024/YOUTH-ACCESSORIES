@@ -1092,7 +1092,7 @@ let _costResults = null;
 function detectCostType(name) {{
   if(/上傳成本表[-_]?優仕/i.test(name))  return 'ys';
   if(/上傳成本表[-_]?暐固/i.test(name))  return 'wk';
-  if(/上傳成本表[-_]?優鋭/i.test(name) || /上傳成本表[-_]?優锐/i.test(name)) return 'yr';
+  if(/上傳成本表[-_]?優[鋭銳锐]/i.test(name)) return 'yr';
   return null;
 }}
 
