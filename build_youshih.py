@@ -1090,9 +1090,9 @@ let _costFiles = [];  // {{name, type:'ys'|'wk'|'yr'|null, rows:[], result:[]}}
 let _costResults = null;
 
 function detectCostType(name) {{
-  if(/上傳成本表[-_]?優仕/i.test(name))  return 'ys';
-  if(/上傳成本表[-_]?暐固/i.test(name))  return 'wk';
-  if(/上傳成本表[-_]?優[鋭銳锐]/i.test(name)) return 'yr';
+  if(/上傳成本表.*優仕/.test(name)) return 'ys';
+  if(/上傳成本表.*暐固/.test(name)) return 'wk';
+  if(/上傳成本表.*優/.test(name))   return 'yr';  // 優銳/優鋭/優锐 任何字型
   return null;
 }}
 
@@ -1291,26 +1291,36 @@ async function runCostCompare() {{
 
 function exportCostExcel() {{
   if(!_costResults) return;
-  const wb = XLSX.utils.book_new();
-  const typeLabel = {{ys:'優仕', wk:'暐固', yr:'優鋭'}};
-  _costResults.forEach((cf,idx) => {{
-    if(!cf.result.length) return;
-    // Build header: original cols first, then derived cols
-    const origKeys = Object.keys(cf.result[0]).filter(k=>!k.startsWith('__'));
+  const validResults = _costResults.filter(cf => cf.result.length > 0);
+  if(!validResults.length) {{ alert('沒有可匯出的資料'); return; }}
+
+  // One Excel file per source file, named originalName-01.xlsx
+  validResults.forEach(cf => {{
     const costLabel = cf.type==='ys'?'進價(未稅)':cf.type==='wk'?'T1成本(未稅)':'T2出優鋭成本(未稅)';
-    const extraKeys = ['__品號','__品名(目錄)','__分類','__目錄'+costLabel,'__差異','__狀態'];
-    const allKeys = [...origKeys, ...extraKeys.filter(k=>Object.prototype.hasOwnProperty.call(cf.result[0],k))];
-    const displayKeys = allKeys.map(k=>k.startsWith('__')?k.replace(/^__/,''):k);
-    const data = [displayKeys, ...cf.result.map(r=>allKeys.map(k=>r[k]===undefined?'':r[k]))];
-    const ws = XLSX.utils.aoa_to_sheet(data);
-    // Color mismatch rows red (column-wise; basic approach)
-    ws['!cols'] = displayKeys.map(()=>({{wch:18}}));
-    const sheetName = (typeLabel[cf.type]||'未知')+'_'+(idx+1);
-    XLSX.utils.book_append_sheet(wb, ws, sheetName.slice(0,31));
+    const origKeys = Object.keys(cf.result[0]).filter(k=>!k.startsWith('__'));
+    const extraDefs = [
+      {{key:'__品名(目錄)', label:'品名(目錄)'}},
+      {{key:'__分類',       label:'分類'}},
+      {{key:'__目錄'+costLabel, label:'目錄'+costLabel}},
+      {{key:'__差異',       label:'成本差異'}},
+      {{key:'__狀態',       label:'比對狀態'}},
+    ].filter(c => Object.prototype.hasOwnProperty.call(cf.result[0], c.key));
+
+    const headers = [...origKeys, ...extraDefs.map(c=>c.label)];
+    const rows = cf.result.map(r => [
+      ...origKeys.map(k => r[k]===undefined?'':r[k]),
+      ...extraDefs.map(c => r[c.key]===undefined?'':r[c.key])
+    ]);
+
+    const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+    ws['!cols'] = headers.map(()=>({{wch:20}}));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Sheet1');
+
+    // filename = 原檔名(去副檔名) + -01.xlsx
+    const base = cf.name.replace(/\.[^.]+$/, '');
+    XLSX.writeFile(wb, base + '-01.xlsx');
   }});
-  if(!wb.SheetNames.length) {{ alert('沒有可匯出的資料'); return; }}
-  const d = new Date().toISOString().slice(0,10);
-  XLSX.writeFile(wb, `成本核對結果_${{d}}.xlsx`);
 }}
 
 // Init
