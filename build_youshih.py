@@ -139,11 +139,24 @@ def ys_make_row(cells, cm, date1904=False):
     elif isinstance(日期, (int,float)) and date1904: 日期 = excel_date_1904(日期)
     elif isinstance(日期, (int,float)): 日期 = excel_date_1900(日期)
     elif 日期: 日期 = safe_str(日期)
-    料號 = get_val(cells, cm['料號'])
-    bc   = get_val(cells, cm['barcode'])
+    料號_raw = get_val(cells, cm['料號'])
+    bc_raw   = get_val(cells, cm['barcode'])
+    料號_str = safe_str(料號_raw)
+    bc_str   = safe_str(bc_raw).replace('.0','')
+    # 修正：若料號為空，掃描所有未對應欄位，找出 Y 開頭的料號（如包袋類 A 欄無表頭放 Y 料號）
+    import re as _re
+    if not 料號_str:
+        _mapped = set(c for cols in cm.values() for c in cols)
+        _cdict = cells if isinstance(cells, dict) else {chr(65+i): v for i,v in enumerate(cells)}
+        for _col, _val in _cdict.items():
+            if _col not in _mapped:
+                _v = safe_str(_val)
+                if _re.match(r'^Y\d{9,}', _v):
+                    料號_str = _v
+                    break
     return {
-        '料號':    safe_str(料號),
-        'barcode': safe_str(bc).replace('.0',''),
+        '料號':    料號_str,
+        'barcode': bc_str,
         '品名':    safe_str(品名),
         '進價':    safe_int(get_val(cells, cm['進價'])),
         '售價':    safe_int(get_val(cells, cm['售價'])),
