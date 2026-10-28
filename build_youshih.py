@@ -439,6 +439,16 @@ header p{{font-size:.82rem;opacity:.75;margin-top:3px}}
 .scope input{{accent-color:var(--p);width:13px;height:13px}}
 .ib{{margin-left:auto;font-size:.8rem;color:var(--mu);white-space:nowrap}}
 
+/* Search help tooltip */
+.sh-wrap{{position:relative;display:inline-flex;align-items:center}}
+.sh-btn{{width:18px;height:18px;border-radius:50%;background:#e2e8f0;border:none;cursor:pointer;font-size:.72rem;color:#475569;display:inline-flex;align-items:center;justify-content:center;font-weight:700;flex-shrink:0;transition:background .15s;padding:0}}
+.sh-btn:hover{{background:#cbd5e1;color:#1e40af}}
+.sh-tip{{display:none;position:absolute;top:calc(100% + 8px);left:0;background:#1e293b;color:#f1f5f9;font-size:.76rem;border-radius:8px;padding:14px 16px;width:330px;box-shadow:0 4px 20px rgba(0,0,0,.3);z-index:999;line-height:1.65;white-space:normal}}
+.sh-tip::before{{content:'';position:absolute;bottom:100%;left:10px;border:6px solid transparent;border-bottom-color:#1e293b}}
+.sh-wrap:hover .sh-tip,.sh-wrap:focus-within .sh-tip{{display:block}}
+.sh-tip b{{color:#93c5fd}}
+.sh-tip code{{background:rgba(255,255,255,.15);border-radius:3px;padding:1px 4px;font-family:monospace;font-size:.73rem}}
+
 /* Search banner */
 #banner{{display:none;background:#eff6ff;border-bottom:1px solid #bfdbfe;padding:7px 24px;font-size:.83rem;color:#1d4ed8;align-items:center;gap:8px}}
 #banner.on{{display:flex}}
@@ -581,8 +591,27 @@ mark{{background:#fef08a;border-radius:2px;padding:0 1px}}
 <div class="toolbar">
   <div class="sw">
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-    <input type="text" id="search" placeholder="多關鍵字空格分隔＝同時符合，例：尚宏 保護套；-詞 可排除（跨所有分類）">
+    <input type="text" id="search" placeholder="關鍵字AND；多料號/條碼空格分隔OR；貼文字自動擷取碼；2026/202604/202604+/202601-03 篩日期">
     <button id="clr">✕</button>
+  </div>
+  <div class="sh-wrap">
+    <button class="sh-btn" tabindex="0" aria-label="搜尋說明">?</button>
+    <div class="sh-tip">
+      <b>搜尋規則說明</b><br><br>
+      <b>多關鍵字（AND）</b>：空格分隔，全部符合才顯示<br>
+      範例：<code>尚宏 保護套</code><br><br>
+      <b>排除詞</b>：詞前加 <code>-</code><br>
+      範例：<code>-尚宏</code><br><br>
+      <b>多料號 / 國條（OR）</b>：空格分隔，任一符合即顯示<br>
+      範例：<code>Y099904088103 Y099904086103</code><br><br>
+      <b>貼上任意文字</b>：自動擷取其中料號或國條比對，<br>其餘文字忽略<br><br>
+      <b>日期篩選（可直接輸入搜尋列）</b>：<br>
+      <code>2026</code> → 2026 整年<br>
+      <code>202604</code> → 2026 年 4 月<br>
+      <code>202604+</code> → 2026 年 4 月起<br>
+      <code>202601-03</code> → 2026 年 1～3 月<br><br>
+      <b>跨分類</b>：有任何條件時自動跨所有分類搜尋
+    </div>
   </div>
   <div class="scope">
     <span>欄位：</span>
@@ -736,12 +765,67 @@ const SEARCH_KEYS = {{
 function esc(s){{return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}}
 // 正規化：全形英數/符號→半形、全形空白→半形、轉小寫，讓料號/條碼打全形也能命中
 function norm(s){{return String(s||'').replace(/[\\uFF01-\\uFF5E]/g,ch=>String.fromCharCode(ch.charCodeAt(0)-0xFEE0)).replace(/\\u3000/g,' ').toLowerCase()}}
-// 把搜尋字串拆成多個詞：空白分隔，AND 關係；以 - 開頭者為排除詞
-function parseTerms(str){{
-  return norm(str).split(/\\s+/).filter(Boolean).map(tok=>{{
-    if(tok.length>1&&tok[0]==='-')return{{neg:true,w:tok.slice(1)}};
-    return{{neg:false,w:tok}};
-  }}).filter(t=>t.w);
+// ── 搜尋解析 ─────────────────────────────────────────────────────────────────
+// parseQuery(str) → {{codes, terms, idFrom, idTo}}
+//   codes  : 料號/國條 array (OR 比對，不受 scope 限制)
+//   terms  : AND 關鍵字 array ({{neg,w}})；有 codes 時為空
+//   idFrom/idTo : 從搜尋列直接輸入的日期篩選
+function _extractCodes(str) {{
+  const c = [];
+  // Y 料號：Y + 9-12 digits
+  for(const m of str.matchAll(/Y\\d{{9,12}}/gi)) c.push(m[0].toLowerCase());
+  // 國條 / barcode：8-13 pure digits，不被字母或數字包圍
+  for(const m of str.matchAll(/(?<![A-Za-z.\\d])\\d{{8,13}}(?![.\\d])/g)) c.push(m[0]);
+  return [...new Set(c)];
+}}
+function parseQuery(str) {{
+  const raw = str.trim();
+  if(!raw) return {{codes:[], terms:[], idFrom:'', idTo:''}};
+
+  // 從完整字串抓所有料號/國條（處理貼上任意文字的情境）
+  const codes = _extractCodes(raw);
+
+  // 逐 token 識別日期格式
+  const tokens = raw.split(/[\\s,\\t\\n]+/).filter(Boolean);
+  let idFrom = '', idTo = '';
+  const rest = [];
+  for(const tok of tokens) {{
+    const n = norm(tok);
+    // YYYYMM-MM 範圍
+    const mR = n.match(/^(\\d{{4}})(\\d{{2}})-(\\d{{2}})$/);
+    if(mR) {{
+      const last = new Date(+mR[1],+mR[3],0).getDate();
+      idFrom = mR[1]+'-'+mR[2]+'-01';
+      idTo   = mR[1]+'-'+mR[3]+'-'+String(last).padStart(2,'0');
+      continue;
+    }}
+    // YYYYMM(+)
+    const mM = n.match(/^(\\d{{4}})(\\d{{2}})(\\+)?$/);
+    if(mM) {{
+      const last = new Date(+mM[1],+mM[2],0).getDate();
+      idFrom = mM[1]+'-'+mM[2]+'-01';
+      idTo   = mM[3] ? '' : mM[1]+'-'+mM[2]+'-'+String(last).padStart(2,'0');
+      continue;
+    }}
+    // YYYY 年份
+    const mY = n.match(/^(\\d{{4}})$/);
+    if(mY && +mY[1]>2000 && +mY[1]<2100) {{
+      idFrom = mY[1]+'-01-01'; idTo = mY[1]+'-12-31';
+      continue;
+    }}
+    rest.push(tok);
+  }}
+
+  // 有 codes → 忽略其他文字，只做料號 OR 搜尋
+  const terms = [];
+  if(!codes.length) {{
+    for(const tok of rest) {{
+      const w = norm(tok); if(!w) continue;
+      if(w.length>1&&w[0]==='-') terms.push({{neg:true,w:w.slice(1)}});
+      else terms.push({{neg:false,w}});
+    }}
+  }}
+  return {{codes, terms, idFrom, idTo}};
 }}
 function hi(t,terms){{
   const et=esc(t);
@@ -774,13 +858,21 @@ function matchRow(r,terms,s,sk){{
   }}
   return true;
 }}
-// 日期區間：對應品牌的建檔/更新日期(ISO字串可直接比大小)；有篩選但該筆無日期則排除
-function matchDate(r,sk){{
-  if(!dFrom&&!dTo)return true;
+// 料號/國條 OR 比對（不受 scope 限制，一定比對 pno/bc/yno）
+function matchCodes(r,codes,sk){{
+  if(!codes.length)return true;
+  const fs=[norm(r[sk.pno]||''),norm(r[sk.bc]||'')];
+  if(sk.yno)fs.push(norm(r[sk.yno]||''));
+  return codes.some(c=>fs.some(f=>f===c||f.includes(c)));
+}}
+// 日期區間：idFrom/idTo 來自搜尋列內嵌日期；dFrom/dTo 來自日期選擇器；內嵌優先
+function matchDate(r,sk,idFrom,idTo){{
+  const from=idFrom||dFrom, to=idTo||dTo;
+  if(!from&&!to)return true;
   const d=(r[sk.dt]||'').slice(0,10);
   if(!d)return false;
-  if(dFrom&&d<dFrom)return false;
-  if(dTo&&d>dTo)return false;
+  if(from&&d<from)return false;
+  if(to&&d>to)return false;
   return true;
 }}
 
@@ -820,13 +912,18 @@ function buildThead(withCat){{
 // ── Render ─────────────────────────────────────────────────────────────────────
 function render(){{
   const D=data(), sk=SEARCH_KEYS[brand], cols=COLS[brand], s=scope();
-  const terms=parseTerms(q);
+  const {{codes,terms,idFrom,idTo}}=parseQuery(q);
   const dateOn=!!(dFrom||dTo);
-  const active=terms.length>0||dateOn;
+  const inlineDateOn=!!(idFrom||idTo);
+  const active=codes.length>0||terms.length>0||dateOn||inlineDateOn;
   let rows, catCol=false;
 
   if(active){{
-    rows=allRows().filter(r=>matchRow(r,terms,s,sk)&&matchDate(r,sk));
+    rows=allRows().filter(r=>
+      (!codes.length||matchCodes(r,codes,sk))&&
+      (!terms.length||matchRow(r,terms,s,sk))&&
+      matchDate(r,sk,idFrom,idTo)
+    );
     catCol=true;
   }} else {{
     rows=D[cur]||[];
